@@ -2,7 +2,12 @@
 
 A community-maintained directory of the Victoria BC (YYJ) tech and business scene.
 
-Businesses, coworking spaces, hotels, restaurants, breweries, venues, tech companies, and organizations worth knowing about.
+Businesses, coworking spaces, hotels, restaurants, breweries, venues, tech companies, and organizations worth knowing about. Data sourced from [ianlpaterson.com](https://ianlpaterson.com) and maintained collaboratively.
+
+## Featured in
+
+- [Where to Work in Victoria BC](https://ianlpaterson.com/blog/where-to-work-victoria-bc/) - coffee shops and coworking spaces for remote workers and business travellers
+- [Victoria BC Executive Visitor's Guide](https://ianlpaterson.com/blog/victoria-bc-executive-visitors-guide-2/) - hotels, restaurants, breweries, and attractions
 
 ## Data
 
@@ -16,7 +21,7 @@ The source of truth is [`data/businesses.csv`](data/businesses.csv). Maps and ot
 | `Address` | Full street address including city and province |
 | `Category` | See categories below |
 | `Website` | Domain only (no https://) |
-| `Article` | ILP blog article where this business was featured (optional) |
+| `Article` | Blog article where this business was featured (optional) |
 | `Notes` | Anything useful: ownership, quirks, sub-venues |
 
 ### Categories
