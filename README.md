@@ -16,9 +16,7 @@ The source of truth is [`data/businesses.csv`](data/businesses.csv). Maps and ot
 | `Address` | Full street address including city and province |
 | `Category` | See categories below |
 | `Website` | Domain only (no https://) |
-| `Email` | Primary contact email |
 | `Article` | ILP blog article where this business was featured (optional) |
-| `In Outreach CSV` | Yes/No - internal tracking field |
 | `Notes` | Anything useful: ownership, quirks, sub-venues |
 
 ### Categories
@@ -47,7 +45,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 PRs welcome for:
 - New businesses
 - Address corrections
-- Email/website updates
+- Website updates
 - New categories (open an issue first)
 
 ## License
