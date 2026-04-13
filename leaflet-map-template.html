@@ -1,0 +1,243 @@
+<!-- ============================================================
+  YYJ Business Directory - Leaflet Map Embed
+  Reusable template for WordPress HTML blocks.
+
+  HOW TO USE:
+  1. Copy this entire snippet into a WordPress HTML block
+  2. Edit MAP_CONFIG at the top to set your categories, center, zoom, etc.
+  3. Save and preview - the map loads automatically
+
+  MAP_CONFIG reference:
+    categories  - array of category strings to show (must match CSV Category column exactly)
+    center      - [lat, lng] default map center
+    zoom        - default zoom level (13 = neighborhood, 15 = street)
+    height      - CSS height string for the map container
+    csvUrl      - URL to the businesses CSV (leave as-is unless the file moves)
+
+  To add Lat/Lng data to the CSV: add Lat and Lng columns to businesses.csv.
+  Rows missing Lat/Lng are silently skipped.
+============================================================ -->
+<script>
+const MAP_CONFIG = {
+  categories: ["Hotel"],          // Edit this list to filter which businesses appear
+  center: [48.4284, -123.3656],   // Victoria BC downtown
+  zoom: 13,
+  height: "450px",
+  csvUrl: "https://raw.githubusercontent.com/ianlpaterson/awesome-yyj/main/data/businesses.csv",
+};
+</script>
+
+<!-- Leaflet CSS (loaded once even if multiple maps on page) -->
+<script>
+if (!document.getElementById("yyj-leaflet-css")) {
+  var _lCss = document.createElement("link");
+  _lCss.id = "yyj-leaflet-css";
+  _lCss.rel = "stylesheet";
+  _lCss.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  _lCss.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+  _lCss.crossOrigin = "";
+  document.head.appendChild(_lCss);
+}
+</script>
+
+<style>
+.yyj-map-wrap { width: 100%; box-sizing: border-box; margin: 0; padding: 0; }
+.yyj-map-wrap .yyj-map-container { width: 100%; border-radius: 6px; overflow: hidden; border: 1px solid #ddd; }
+.yyj-map-wrap .yyj-map-loading {
+  display: flex; align-items: center; justify-content: center;
+  background: #f5f5f5; color: #666; font-family: sans-serif;
+  font-size: 14px; border-radius: 6px; border: 1px solid #ddd;
+}
+.yyj-map-wrap .yyj-popup-name { font-weight: bold; font-size: 14px; margin: 0 0 3px; }
+.yyj-map-wrap .yyj-popup-address { font-size: 12px; color: #555; margin: 0 0 4px; }
+.yyj-map-wrap .yyj-popup-website a { font-size: 12px; color: #0066cc; text-decoration: none; }
+.yyj-map-wrap .yyj-popup-website a:hover { text-decoration: underline; }
+.yyj-map-wrap .yyj-popup-notes { font-size: 11px; color: #777; margin-top: 4px; font-style: italic; }
+.yyj-map-wrap .yyj-map-error {
+  padding: 12px; background: #fff3cd; color: #856404;
+  font-family: sans-serif; font-size: 13px; border-radius: 6px; border: 1px solid #ffc107;
+}
+</style>
+
+<!-- Anchor element: the init script below finds this div via previousElementSibling -->
+<div class="yyj-map-wrap" data-yyj-map-root="1">
+  <div class="yyj-map-loading" style="height: 450px;">Loading map...</div>
+  <div class="yyj-map-container" style="display: none;"></div>
+</div>
+
+<script id="yyj-map-init-script">
+(function() {
+  // Find the map root that immediately precedes this script tag.
+  // Using previousElementSibling means each copy of the snippet targets its OWN div,
+  // so multiple maps on one page never conflict.
+  var initScript = document.getElementById("yyj-map-init-script");
+  // After the first run, remove the static ID so the next copy can use it
+  if (initScript) { initScript.removeAttribute("id"); }
+
+  var root = initScript ? initScript.previousElementSibling : null;
+  if (!root || !root.dataset.yyjMapRoot) { return; }
+
+  var loading = root.querySelector(".yyj-map-loading");
+  var container = root.querySelector(".yyj-map-container");
+  if (!loading || !container) { return; }
+
+  // Assign a unique ID to the container for Leaflet
+  var mapId = "yyj-map-" + Math.random().toString(36).slice(2, 9);
+  container.id = mapId;
+
+  // Sync height from MAP_CONFIG to both placeholder divs
+  var h = MAP_CONFIG.height || "450px";
+  loading.style.height = h;
+  container.style.height = h;
+
+  // ---- Lightweight RFC 4180-compliant CSV parser ----
+  function parseCSV(text) {
+    var rows = [];
+    var row = [];
+    var field = "";
+    var inQ = false;
+    var i = 0;
+    var len = text.length;
+    while (i < len) {
+      var ch = text[i];
+      if (inQ) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQ = false;
+        } else { field += ch; }
+      } else {
+        if      (ch === '"')  { inQ = true; }
+        else if (ch === ',')  { row.push(field.trim()); field = ""; }
+        else if (ch === '\r') { /* skip */ }
+        else if (ch === '\n') { row.push(field.trim()); rows.push(row); row = []; field = ""; }
+        else                  { field += ch; }
+      }
+      i++;
+    }
+    if (row.length || field) { row.push(field.trim()); rows.push(row); }
+    return rows;
+  }
+
+  function escHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function showError(msg) {
+    loading.style.display = "none";
+    var err = document.createElement("div");
+    err.className = "yyj-map-error";
+    err.textContent = "Map error: " + msg;
+    root.appendChild(err);
+  }
+
+  function loadLeafletAndInit(businesses) {
+    if (window.L) {
+      initMap(businesses);
+      return;
+    }
+    // Leaflet JS not yet loaded - inject it once then init
+    if (!document.getElementById("yyj-leaflet-js")) {
+      var s = document.createElement("script");
+      s.id = "yyj-leaflet-js";
+      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      s.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=";
+      s.crossOrigin = "";
+      s.onload = function() { initMap(businesses); };
+      s.onerror = function() { showError("Could not load Leaflet library"); };
+      document.head.appendChild(s);
+    } else {
+      // Another map already triggered the load - poll until ready
+      var tries = 0;
+      var poll = setInterval(function() {
+        if (window.L) { clearInterval(poll); initMap(businesses); }
+        if (++tries > 50) { clearInterval(poll); showError("Leaflet load timeout"); }
+      }, 100);
+    }
+  }
+
+  function initMap(businesses) {
+    loading.style.display = "none";
+    container.style.display = "block";
+
+    var map = L.map(mapId).setView(MAP_CONFIG.center, MAP_CONFIG.zoom);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    var placed = 0;
+    businesses.forEach(function(biz) {
+      var lat = parseFloat(biz.Lat);
+      var lng = parseFloat(biz.Lng);
+      if (!biz.Lat || !biz.Lng || isNaN(lat) || isNaN(lng)) { return; }
+
+      var popup =
+        '<p class="yyj-popup-name">' + escHtml(biz.Name) + '</p>' +
+        (biz.Address ? '<p class="yyj-popup-address">' + escHtml(biz.Address) + '</p>' : "");
+
+      if (biz.Website) {
+        var href = /^https?:\/\//.test(biz.Website) ? biz.Website : "https://" + biz.Website;
+        popup += '<p class="yyj-popup-website"><a href="' + escHtml(href) + '" target="_blank" rel="noopener noreferrer">' + escHtml(biz.Website) + '</a></p>';
+      }
+      if (biz.Notes) {
+        popup += '<p class="yyj-popup-notes">' + escHtml(biz.Notes) + '</p>';
+      }
+
+      L.marker([lat, lng]).bindPopup(popup).addTo(map);
+      placed++;
+    });
+
+    if (placed === 0) {
+      console.info(
+        "YYJ map (" + mapId + "): 0 markers placed for categories [" +
+        MAP_CONFIG.categories.join(", ") +
+        "]. Rows may be missing Lat/Lng columns or categories may not match."
+      );
+    }
+
+    // Give the WP theme layout a moment to settle, then fix tile rendering
+    setTimeout(function() { map.invalidateSize(); }, 350);
+  }
+
+  // Fetch CSV then kick off the map
+  fetch(MAP_CONFIG.csvUrl)
+    .then(function(r) {
+      if (!r.ok) { throw new Error("HTTP " + r.status + " loading CSV"); }
+      return r.text();
+    })
+    .then(function(text) {
+      var rows = parseCSV(text);
+      if (rows.length < 2) { throw new Error("CSV is empty or has no data rows"); }
+
+      var headers = rows[0].map(function(h) { return h.trim(); });
+      if (headers.indexOf("Category") === -1) {
+        throw new Error("CSV is missing a Category column");
+      }
+
+      var filterSet = {};
+      MAP_CONFIG.categories.forEach(function(c) {
+        filterSet[c.toLowerCase().trim()] = true;
+      });
+
+      var businesses = [];
+      for (var i = 1; i < rows.length; i++) {
+        var row = rows[i];
+        // Allow rows that are short by at most 2 trailing columns (Lat/Lng often added last)
+        if (row.length < headers.length - 2) { continue; }
+        var obj = {};
+        headers.forEach(function(h, idx) { obj[h] = row[idx] !== undefined ? row[idx] : ""; });
+        var cat = (obj.Category || "").toLowerCase().trim();
+        if (filterSet[cat]) { businesses.push(obj); }
+      }
+
+      loadLeafletAndInit(businesses);
+    })
+    .catch(function(err) {
+      showError(err.message || "Unknown error loading map data");
+    });
+
+})();
+</script>
